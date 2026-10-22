@@ -7,18 +7,26 @@ import av
 import cv2
 import joblib
 import mediapipe as mp
+import numpy as np
 import pandas as pd
-import pyttsx3
 import streamlit as st
+
 from streamlit_webrtc import (
     VideoProcessorBase,
     WebRtcMode,
     webrtc_streamer,
 )
 
-# ==================================================
+# Text-to-speech is optional because it may not work on Streamlit Cloud.
+try:
+    import pyttsx3
+except ImportError:
+    pyttsx3 = None
+
+
+# ============================================================
 # 1. CONFIGURATION
-# ==================================================
+# ============================================================
 
 st.set_page_config(
     page_title="SignSpeak | AI Sign Recognition",
@@ -34,9 +42,9 @@ HISTORY_SIZE = 15
 STABLE_COUNT = 10
 
 
-# ==================================================
-# 2. CUSTOM COLORFUL DESIGN
-# ==================================================
+# ============================================================
+# 2. CUSTOM DESIGN
+# ============================================================
 
 st.markdown(
     """
@@ -78,213 +86,101 @@ st.markdown(
     }
 
     h1, h2, h3, p, label {
-        font-family: 'DM Sans', sans-serif !important;
+        font-family: 'DM Sans', sans-serif;
     }
 
     h1 {
-        color: #fff !important;
-        font-weight: 800 !important;
-        letter-spacing: -1.5px;
-    }
-
-    h2, h3 {
-        color: #f7f4ff !important;
-        font-weight: 700 !important;
-    }
-
-    p, label, [data-testid="stCaptionContainer"] {
-        color: var(--muted);
+        color: #f8f7ff;
+        font-weight: 800;
     }
 
     .hero {
-        padding: 28px 30px;
-        border-radius: 26px;
-        margin-bottom: 24px;
-        background: linear-gradient(
-            115deg,
-            rgba(124, 58, 237, 0.33),
-            rgba(219, 39, 119, 0.22),
-            rgba(8, 145, 178, 0.18)
-        );
-        border: 1px solid rgba(255,255,255,0.12);
-        box-shadow: 0 16px 50px rgba(0,0,0,0.15);
+        padding: 1.5rem 0 1rem 0;
     }
 
-    .brand {
-        font-size: 14px;
+    .hero-label {
+        color: #c4b5fd;
+        font-size: 0.85rem;
+        font-weight: 700;
         letter-spacing: 3px;
         text-transform: uppercase;
-        font-weight: 800;
-        color: #d8ccff;
     }
 
     .hero-title {
-        font-size: clamp(32px, 4vw, 48px);
+        font-size: clamp(2.4rem, 5vw, 4.2rem);
+        line-height: 1.1;
         font-weight: 800;
-        line-height: 1.15;
-        margin: 10px 0;
-        color: white;
+        margin: 0.5rem 0;
+        color: #ffffff;
+    }
+
+    .hero-title span {
+        background: linear-gradient(90deg, #a78bfa, #f472b6, #67e8f9);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
     }
 
     .hero-description {
-        font-size: 15px;
-        line-height: 1.8;
-        color: #d4d2e9;
-        max-width: 700px;
-    }
-
-    .panel {
-        background: linear-gradient(
-            145deg,
-            rgba(35, 33, 61, 0.96),
-            rgba(24, 27, 47, 0.96)
-        );
-        border: 1px solid rgba(255,255,255,0.10);
-        border-radius: 22px;
-        padding: 22px;
-        margin-bottom: 18px;
-        box-shadow: 0 12px 35px rgba(0,0,0,0.14);
-    }
-
-    .section-label {
-        font-size: 12px;
-        letter-spacing: 2px;
-        font-weight: 800;
-        text-transform: uppercase;
-        color: #b9a5ff;
-        margin-bottom: 7px;
-    }
-
-    .panel-title {
-        font-size: 22px;
-        font-weight: 700;
-        color: #ffffff;
-        margin-bottom: 8px;
-    }
-
-    .panel-description {
-        color: #aaa9c4;
-        font-size: 13px;
+        color: #c2c0dc;
+        font-size: 1.05rem;
+        max-width: 750px;
         line-height: 1.7;
     }
 
-    .letter-card {
+    .panel {
+        background: rgba(27, 27, 50, 0.82);
+        border: 1px solid rgba(167, 139, 250, 0.22);
         border-radius: 20px;
-        padding: 18px;
-        text-align: center;
-        background: linear-gradient(
-            135deg,
-            rgba(139, 92, 246, 0.24),
-            rgba(236, 72, 153, 0.16),
-            rgba(34, 211, 238, 0.12)
-        );
-        border: 1px solid rgba(196,181,253,0.25);
-        margin: 12px 0;
+        padding: 1.25rem;
+        margin-bottom: 1rem;
     }
 
-    .letter-label {
-        color: #c4b5fd;
-        font-size: 11px;
-        font-weight: 800;
-        letter-spacing: 2px;
+    .panel-label {
+        color: #aaa9c4;
         text-transform: uppercase;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 1.5px;
     }
 
-    .letter-value {
-        color: #ffffff;
-        font-size: 64px;
-        line-height: 1.2;
+    .prediction {
+        font-size: 5rem;
         font-weight: 800;
-        padding: 8px 0;
-    }
-
-    .message-card {
-        min-height: 140px;
-        overflow-wrap: anywhere;
-        white-space: pre-wrap;
-        border-radius: 17px;
-        padding: 20px;
-        color: #ffffff;
-        font-size: 20px;
-        line-height: 1.8;
-        background: rgba(12, 14, 30, 0.75);
-        border: 1px solid rgba(167,139,250,0.25);
-    }
-
-    .empty-message {
-        color: #85849f;
-        font-size: 15px;
-    }
-
-    .status {
-        display: inline-block;
-        border-radius: 30px;
-        padding: 7px 12px;
-        background: rgba(34,197,94,0.12);
-        color: #86efac;
-        font-size: 12px;
-        font-weight: 700;
-        border: 1px solid rgba(34,197,94,0.2);
-    }
-
-    .status-idle {
-        background: rgba(167,139,250,0.12);
-        color: #d8ccff;
-        border-color: rgba(167,139,250,0.22);
-    }
-
-    .stButton > button {
-        min-height: 43px;
-        width: 100%;
-        border-radius: 13px;
-        font-weight: 700;
-        border: 1px solid rgba(255,255,255,0.12);
-        color: #f8f7ff;
-        background: rgba(255,255,255,0.07);
-        transition: all 0.2s ease;
-    }
-
-    .stButton > button:hover {
-        color: #ffffff;
-        border-color: #a78bfa;
-        background: rgba(139,92,246,0.23);
-        transform: translateY(-1px);
-    }
-
-    .stButton > button[kind="primary"] {
-        background: linear-gradient(100deg, #7c3aed, #db2777);
-        border: none;
-        color: white;
-    }
-
-    [data-testid="stWebRtcStreamer"] {
-        border-radius: 16px;
-        overflow: hidden;
-    }
-
-    [data-testid="stAlert"] {
-        border-radius: 14px;
-    }
-
-    .footer {
+        line-height: 1.2;
         text-align: center;
-        color: #85849f;
-        font-size: 12px;
-        padding-top: 24px;
+        color: #c4b5fd;
     }
 
-    @media (max-width: 768px) {
-        [data-testid="stMainBlockContainer"] {
-            padding: 1rem;
-        }
+    .muted {
+        color: #aaa9c4;
+    }
 
-        .hero {
-            padding: 22px;
-        }
+    .sentence {
+        min-height: 85px;
+        padding: 1rem;
+        border-radius: 14px;
+        border: 1px solid rgba(103, 232, 249, 0.25);
+        background: rgba(16, 16, 32, 0.7);
+        color: #f8f7ff;
+        font-size: 1.25rem;
+        overflow-wrap: anywhere;
+    }
 
-        .panel {
-            padding: 16px;
-        }
+    div.stButton > button {
+        border-radius: 12px;
+        font-weight: 700;
+        min-height: 2.8rem;
+    }
+
+    [data-testid="stMetric"] {
+        background: rgba(27, 27, 50, 0.75);
+        padding: 1rem;
+        border-radius: 14px;
+        border: 1px solid rgba(167, 139, 250, 0.18);
+    }
+
+    hr {
+        border-color: rgba(167, 139, 250, 0.2);
     }
     </style>
     """,
@@ -292,21 +188,34 @@ st.markdown(
 )
 
 
-# ==================================================
-# 3. LOAD MODEL
-# ==================================================
+# ============================================================
+# 3. LOAD THE TRAINED MODEL
+# ============================================================
 
 @st.cache_resource
 def load_model():
+    if not MODEL_PATH.exists():
+        raise FileNotFoundError(
+            f"Model not found: {MODEL_PATH}. "
+            "Make sure models/asl_model.pkl is included in your repository."
+        )
+
     return joblib.load(MODEL_PATH)
 
 
-# ==================================================
-# 4. CAMERA PROCESSOR
-# ==================================================
+try:
+    model = load_model()
+    model_error = None
+except Exception as exc:
+    model = None
+    model_error = str(exc)
+
+
+# ============================================================
+# 4. WEBCAM PROCESSOR AND SIGN RECOGNITION
+# ============================================================
 
 class SignLanguageProcessor(VideoProcessorBase):
-
     def __init__(self):
         self.model = load_model()
 
@@ -316,6 +225,7 @@ class SignLanguageProcessor(VideoProcessorBase):
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=1,
+            model_complexity=0,
             min_detection_confidence=0.5,
             min_tracking_confidence=0.5,
         )
@@ -328,42 +238,44 @@ class SignLanguageProcessor(VideoProcessorBase):
         self.latest_confidence = 0.0
         self.hand_detected = False
         self.last_added_letter = None
+        self.processing_error = ""
 
     def recv(self, frame):
-        image = frame.to_ndarray(format="bgr24")
-        image = cv2.flip(image, 1)
+        try:
+            image = frame.to_ndarray(format="bgr24")
+            image = cv2.flip(image, 1)
 
-        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        results = self.hands.process(rgb)
+            rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            results = self.hands.process(rgb_image)
 
-        detected = bool(results.multi_hand_landmarks)
+            detected = bool(results.multi_hand_landmarks)
 
-        with self.lock:
-            self.hand_detected = detected
+            with self.lock:
+                self.hand_detected = detected
+                self.processing_error = ""
 
-        if detected:
-            hand = results.multi_hand_landmarks[0]
+            if detected:
+                hand = results.multi_hand_landmarks[0]
 
-            self.mp_drawing.draw_landmarks(
-                image,
-                hand,
-                self.mp_hands.HAND_CONNECTIONS,
-            )
+                self.mp_drawing.draw_landmarks(
+                    image,
+                    hand,
+                    self.mp_hands.HAND_CONNECTIONS,
+                )
 
-            features = []
+                features = []
+                for point in hand.landmark:
+                    features.extend([point.x, point.y, point.z])
 
-            for point in hand.landmark:
-                features.extend([point.x, point.y, point.z])
-
-            try:
+                # The model expects 63 values per hand.
                 X = pd.DataFrame([features])
-                prediction = str(self.model.predict(X)[0])
 
+                prediction = str(self.model.predict(X)[0])
                 confidence = 0.0
 
                 if hasattr(self.model, "predict_proba"):
                     probabilities = self.model.predict_proba(X)[0]
-                    confidence = float(probabilities.max())
+                    confidence = float(np.max(probabilities))
 
                 with self.lock:
                     self.latest_letter = prediction
@@ -371,6 +283,7 @@ class SignLanguageProcessor(VideoProcessorBase):
 
                 self.history.append(prediction)
 
+                # Accept a letter only when it is stable across frames.
                 if len(self.history) == HISTORY_SIZE:
                     letter, occurrences = Counter(
                         self.history
@@ -388,128 +301,124 @@ class SignLanguageProcessor(VideoProcessorBase):
 
                 cv2.putText(
                     image,
-                    f"Letter: {prediction}",
+                    f"Prediction: {prediction}",
                     (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    1,
-                    (170, 110, 255),
+                    0.9,
+                    (190, 150, 255),
                     2,
+                    cv2.LINE_AA,
                 )
 
                 cv2.putText(
                     image,
-                    f"Confidence: {confidence * 100:.1f}%",
-                    (20, 80),
+                    f"Confidence: {confidence:.0%}",
+                    (20, 75),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.7,
-                    (90, 230, 255),
+                    (100, 240, 240),
                     2,
+                    cv2.LINE_AA,
                 )
 
-            except Exception as exc:
-                print("Prediction error:", exc)
+            else:
+                self.history.clear()
+                self.last_added_letter = None
+
+                with self.lock:
+                    self.latest_letter = ""
+                    self.latest_confidence = 0.0
 
                 cv2.putText(
                     image,
-                    "Prediction error",
+                    "Show your hand to the camera",
                     (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    (0, 0, 255),
+                    0.7,
+                    (255, 255, 255),
                     2,
+                    cv2.LINE_AA,
                 )
 
-        else:
-            self.history.clear()
-            self.last_added_letter = None
-
-            with self.lock:
-                self.latest_letter = ""
-                self.latest_confidence = 0.0
-
-            cv2.putText(
+            return av.VideoFrame.from_ndarray(
                 image,
-                "Show your hand",
-                (20, 40),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (255, 200, 100),
-                2,
+                format="bgr24",
             )
 
-        return av.VideoFrame.from_ndarray(
-            image,
-            format="bgr24",
-        )
+        except Exception as exc:
+            # Keep the video processor alive and expose the error in the UI.
+            with self.lock:
+                self.processing_error = str(exc)
+
+            try:
+                image = frame.to_ndarray(format="bgr24")
+                cv2.putText(
+                    image,
+                    "Processing error - check the app status",
+                    (15, 35),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0, 0, 255),
+                    2,
+                    cv2.LINE_AA,
+                )
+                return av.VideoFrame.from_ndarray(
+                    image,
+                    format="bgr24",
+                )
+            except Exception:
+                return frame
 
 
-# ==================================================
-# 5. SESSION STATE
-# ==================================================
-
-if "message" not in st.session_state:
-    st.session_state.message = ""
-
-if "speech_notice" not in st.session_state:
-    st.session_state.speech_notice = ""
-
-
-# ==================================================
-# 6. HEADER
-# ==================================================
+# ============================================================
+# 5. HEADER
+# ============================================================
 
 st.markdown(
     """
     <div class="hero">
-        <div class="brand">🤟 SIGNSPEAK · AI STUDIO</div>
-        <div class="hero-title">
-            Your hands.<br>
-            Your voice. Your world.
-        </div>
+        <div class="hero-label">AI-powered communication</div>
+        <div class="hero-title">Sign<span>Speak</span> 🤟</div>
         <div class="hero-description">
-            Transform ASL alphabet gestures into written messages
-            and spoken words with real-time computer vision.
-            Sign naturally, build your message, and let it speak.
+            Transform American Sign Language alphabet gestures into text
+            with real-time hand tracking and machine learning.
         </div>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-if not MODEL_PATH.exists():
-    st.error(f"Trained model not found: {MODEL_PATH}")
+st.divider()
+
+if model_error:
+    st.error(f"Could not load the ASL model: {model_error}")
+    st.info(
+        "Check that models/asl_model.pkl exists and that the required "
+        "Python packages are installed."
+    )
     st.stop()
 
-try:
-    load_model()
-except Exception as exc:
-    st.error(f"Unable to load the trained model: {exc}")
-    st.stop()
+
+# ============================================================
+# 6. SESSION STATE
+# ============================================================
+
+if "sentence" not in st.session_state:
+    st.session_state.sentence = ""
+
+if "camera_started" not in st.session_state:
+    st.session_state.camera_started = False
 
 
-# ==================================================
-# 7. MAIN TWO-COLUMN LAYOUT
-# ==================================================
+# ============================================================
+# 7. MAIN LAYOUT
+# ============================================================
 
-camera_col, workspace_col = st.columns(
-    [1.12, 0.88],
-    gap="large",
-)
+camera_col, result_col = st.columns([1.35, 1], gap="large")
 
 with camera_col:
-    st.markdown(
-        """
-        <div class="panel">
-            <div class="section-label">01 / LIVE STUDIO</div>
-            <div class="panel-title">Gesture recognition</div>
-            <div class="panel-description">
-                Position your hand inside the camera.
-                Hold each sign steady until it is recognized.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown("### 📷 Live camera")
+    st.caption("Allow camera access when your browser asks for permission.")
 
     ctx = webrtc_streamer(
         key="signspeak-camera",
@@ -520,256 +429,209 @@ with camera_col:
             "audio": False,
         },
         async_processing=True,
+        rtc_configuration={
+            "iceServers": [
+                {"urls": ["stun:stun.l.google.com:19302"]}
+            ]
+        },
     )
 
-    st.markdown(
-        """
-        <div class="panel">
-            <div class="section-label">HOW TO USE</div>
-            <div class="panel-description">
-                <b>1.</b> Show an ASL alphabet sign.<br>
-                <b>2.</b> Hold it steady for a moment.<br>
-                <b>3.</b> Remove your hand before repeating
-                the same letter.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    st.caption(
+        "Tip: keep one hand visible, use good lighting, and hold each "
+        "letter steady briefly."
     )
 
+with result_col:
+    st.markdown("### ✨ Recognition")
 
-with workspace_col:
-    st.markdown(
-        """
-        <div class="panel">
-            <div class="section-label">02 / RECOGNITION</div>
-            <div class="panel-title">Your sign</div>
-            <div class="panel-description">
-                The AI's latest prediction appears below.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    letter_display = st.empty()
-    status_display = st.empty()
-    confidence_display = st.empty()
-
-    st.markdown(
-        """
-        <div class="panel">
-            <div class="section-label">03 / MESSAGE BUILDER</div>
-            <div class="panel-title">Make it meaningful</div>
-            <div class="panel-description">
-                Your recognized letters are collected here.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    message_display = st.empty()
-    count_display = st.empty()
-
-    st.markdown(
-        """
-        <div class="panel">
-            <div class="section-label">04 / CONTROLS</div>
-            <div class="panel-title">Edit & communicate</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    control1, control2 = st.columns(2)
-
-    with control1:
-        if st.button(
-            "＋  Add space",
-            use_container_width=True,
-        ):
-            st.session_state.message += " "
-            st.rerun()
-
-        if st.button(
-            "⌫  Delete letter",
-            use_container_width=True,
-        ):
-            st.session_state.message = (
-                st.session_state.message[:-1]
-            )
-            st.rerun()
-
-    with control2:
-        if st.button(
-            "✦  Speak message",
-            type="primary",
-            use_container_width=True,
-        ):
-            text_to_speak = (
-                st.session_state.message.strip()
-            )
-
-            if not text_to_speak:
-                st.session_state.speech_notice = (
-                    "Add some letters before speaking."
-                )
-            else:
-                try:
-                    engine = pyttsx3.init()
-                    engine.say(text_to_speak)
-                    engine.runAndWait()
-                    engine.stop()
-
-                    st.session_state.speech_notice = (
-                        "Speech playback finished."
-                    )
-                except Exception as exc:
-                    st.session_state.speech_notice = (
-                        f"Speech failed: {exc}"
-                    )
-
-            st.rerun()
-
-        if st.button(
-            "↺  Clear message",
-            use_container_width=True,
-        ):
-            st.session_state.message = ""
-            st.session_state.speech_notice = ""
-            st.rerun()
-
-    if st.session_state.speech_notice:
-        st.info(st.session_state.speech_notice)
+    prediction_placeholder = st.empty()
+    confidence_placeholder = st.empty()
+    status_placeholder = st.empty()
+    error_placeholder = st.empty()
 
 
-# ==================================================
-# 8. LIVE UI REFRESH
-# ==================================================
+# ============================================================
+# 8. LIVE RECOGNITION STATUS
+# ============================================================
 
-@st.fragment(run_every="300ms")
-def update_live_interface():
+@st.fragment(run_every="500ms")
+def update_live_status():
     processor = ctx.video_processor
 
-    if processor is not None:
-        with processor.lock:
-            while processor.accepted_letters:
-                letter = processor.accepted_letters.popleft()
-                st.session_state.message += letter
-
-            letter = processor.latest_letter
-            confidence = processor.latest_confidence
-            hand_detected = processor.hand_detected
-
-        if hand_detected:
-            letter_display.markdown(
-                f"""
-                <div class="letter-card">
-                    <div class="letter-label">
-                        CURRENT PREDICTION
-                    </div>
-                    <div class="letter-value">
-                        {letter if letter else "…"}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            status_display.markdown(
-                '<span class="status">● HAND DETECTED</span>',
-                unsafe_allow_html=True,
-            )
-
-            confidence_display.progress(
-                max(0.0, min(1.0, confidence)),
-                text=f"Model confidence: {confidence * 100:.1f}%",
-            )
-        else:
-            letter_display.markdown(
-                """
-                <div class="letter-card">
-                    <div class="letter-label">
-                        CURRENT PREDICTION
-                    </div>
-                    <div class="letter-value">—</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            status_display.markdown(
-                '<span class="status status-idle">'
-                '○ SHOW YOUR HAND</span>',
-                unsafe_allow_html=True,
-            )
-
-            confidence_display.empty()
-
-    else:
-        letter_display.markdown(
+    if not ctx.state.playing:
+        prediction_placeholder.markdown(
             """
-            <div class="letter-card">
-                <div class="letter-label">CURRENT PREDICTION</div>
-                <div class="letter-value">—</div>
+            <div class="panel">
+                <div class="panel-label">Current letter</div>
+                <div class="prediction">—</div>
+                <p class="muted" style="text-align:center">
+                    Start the camera to begin recognition.
+                </p>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        status_display.markdown(
-            '<span class="status status-idle">'
-            '○ CAMERA NOT STARTED</span>',
-            unsafe_allow_html=True,
+        confidence_placeholder.metric("Confidence", "—")
+        status_placeholder.info("Camera is not running.")
+        return
+
+    if processor is None:
+        status_placeholder.warning(
+            "Connecting to the camera and initializing the model..."
         )
+        return
 
-        confidence_display.empty()
+    with processor.lock:
+        letter = processor.latest_letter
+        confidence = processor.latest_confidence
+        detected = processor.hand_detected
+        error = processor.processing_error
 
-    message = st.session_state.message
+    shown_letter = letter if letter else "—"
 
-    if message:
-        # Escape user text before inserting it into HTML.
-        import html
-        safe_message = html.escape(message)
-
-        message_display.markdown(
-            f'<div class="message-card">{safe_message}</div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        message_display.markdown(
-            """
-            <div class="message-card">
-                <span class="empty-message">
-                    Your message will appear here as you sign...
-                </span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    count_display.caption(
-        f"{len(message)} characters · "
-        f"{len(message.split())} words"
+    prediction_placeholder.markdown(
+        f"""
+        <div class="panel">
+            <div class="panel-label">Current letter</div>
+            <div class="prediction">{shown_letter}</div>
+            <p class="muted" style="text-align:center">
+                {"Hand detected" if detected else "Waiting for a hand"}
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
+    confidence_placeholder.metric(
+        "Confidence",
+        f"{confidence:.1%}" if letter else "—",
+    )
 
-update_live_interface()
+    if error:
+        error_placeholder.error(f"Prediction error: {error}")
+    else:
+        error_placeholder.empty()
+
+    if detected:
+        status_placeholder.success(
+            "Hand detected. Hold your sign steady to add a letter."
+        )
+    else:
+        status_placeholder.info(
+            "Show your hand clearly in front of the camera."
+        )
 
 
-# ==================================================
-# 9. FOOTER
-# ==================================================
+update_live_status()
+
+
+# ============================================================
+# 9. BUILD WORDS AND SENTENCES
+# ============================================================
+
+st.divider()
+st.markdown("### 📝 Your message")
+st.write(
+    "Recognized letters are added automatically when the same sign "
+    "remains stable. You can also edit the text yourself."
+)
+
+processor = ctx.video_processor
+
+# Transfer recognized letters from the video thread into Streamlit state.
+if processor is not None:
+    with processor.lock:
+        while processor.accepted_letters:
+            new_letter = processor.accepted_letters.popleft()
+            st.session_state.sentence += new_letter
+
+st.text_area(
+    "Recognized text",
+    key="sentence",
+    height=130,
+    placeholder="Your recognized letters will appear here...",
+)
+
+button_col1, button_col2, button_col3, button_col4 = st.columns(4)
+
+with button_col1:
+    if st.button("␣ Add space", use_container_width=True):
+        st.session_state.sentence += " "
+        st.rerun()
+
+with button_col2:
+    if st.button("⌫ Delete last", use_container_width=True):
+        st.session_state.sentence = st.session_state.sentence[:-1]
+        st.rerun()
+
+with button_col3:
+    if st.button("🧹 Clear text", use_container_width=True):
+        st.session_state.sentence = ""
+        st.rerun()
+
+with button_col4:
+    if st.button("➕ Add punctuation", use_container_width=True):
+        st.session_state.sentence += "."
+        st.rerun()
+
+
+# ============================================================
+# 10. TEXT-TO-SPEECH
+# ============================================================
+
+st.divider()
+st.markdown("### 🔊 Text to speech")
+
+st.write(
+    "Read your message aloud using the text-to-speech engine, if "
+    "the environment supports audio output."
+)
+
+if st.button("🔊 Speak message", type="primary"):
+    message = st.session_state.sentence.strip()
+
+    if not message:
+        st.warning("Recognize some letters or type a message first.")
+
+    elif pyttsx3 is None:
+        st.warning(
+            "The pyttsx3 package is not installed in this environment."
+        )
+
+    else:
+        try:
+            engine = pyttsx3.init()
+            engine.say(message)
+            engine.runAndWait()
+            engine.stop()
+
+            st.success("Speech playback was requested.")
+
+        except Exception as exc:
+            st.error(
+                "Text-to-speech could not run in this environment. "
+                f"Details: {exc}"
+            )
+            st.info(
+                "On Streamlit Cloud, pyttsx3 may not play sound on your "
+                "personal device because it runs on the server."
+            )
+
+
+# ============================================================
+# 11. FOOTER
+# ============================================================
+
+st.divider()
 
 st.markdown(
     """
-    <div class="footer">
-        SIGNSPEAK · Powered by MediaPipe, OpenCV & Machine Learning
-        <br><br>
-        Current version recognizes ASL alphabet signs and spells
-        messages letter by letter. Full ASL word and grammar
-        translation is not yet supported.
+    <div style="text-align:center; color:#aaa9c4; padding:1rem 0;">
+        <p><strong>SignSpeak</strong> · AI-powered ASL alphabet recognition</p>
+        <p style="font-size:0.85rem;">
+            Built with Python, Streamlit, MediaPipe and Machine Learning.
+        </p>
     </div>
     """,
     unsafe_allow_html=True,
